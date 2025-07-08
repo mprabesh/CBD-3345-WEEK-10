@@ -29,10 +29,10 @@ jobs:
           MONGO_INITDB_ROOT_PASSWORD: ${{ secrets.MONGO_PASSWORD || 'password123' }}
           MONGO_INITDB_DATABASE: ${{ secrets.MONGO_DATABASE || 'blogdb' }}
         options: >-
-          --health-cmd "mongosh --eval 'db.runCommand({ping: 1})' --quiet"
+          --health-cmd "timeout 5 bash -c 'cat < /dev/null > /dev/tcp/localhost/27017'"
           --health-interval 10s
           --health-timeout 5s
-          --health-retries 5
+          --health-retries 10
         volumes:
           - ${{ github.workspace }}/mongo-init:/docker-entrypoint-initdb.d:ro
     
@@ -51,18 +51,56 @@ jobs:
           npm ci
           
       - name: Wait for MongoDB to be ready
+        env:
+          MONGO_URL: mongodb://${{ secrets.MONGO_USERNAME || 'admin' }}:${{ secrets.MONGO_PASSWORD || 'password123' }}@localhost:27017/${{ secrets.MONGO_DATABASE || 'blogdb' }}?authSource=admin
         run: |
-          # Wait for MongoDB to be fully ready
-          timeout 60 bash -c 'until mongosh --host localhost --port 27017 --username "${{ secrets.MONGO_USERNAME || 'admin' }}" --password "${{ secrets.MONGO_PASSWORD || 'password123' }}" --authenticationDatabase admin --eval "db.runCommand({ping: 1})" --quiet; do sleep 2; done'
+          # Create a simple Node.js script to test MongoDB connection
+          cat > test-mongo.js << 'EOF'
+          const mongoose = require('mongoose');
+          
+          async function testConnection() {
+            try {
+              await mongoose.connect(process.env.MONGO_URL);
+              console.log('✅ MongoDB connection successful');
+              
+              // Test database and collections
+              const db = mongoose.connection.db;
+              const collections = await db.listCollections().toArray();
+              console.log('📋 Available collections:', collections.map(c => c.name));
+              
+              // Test if our collections exist and have data
+              const User = mongoose.model('User', new mongoose.Schema({}, { collection: 'users' }));
+              const Blog = mongoose.model('Blog', new mongoose.Schema({}, { collection: 'blogs' }));
+              
+              const userCount = await User.countDocuments();
+              const blogCount = await Blog.countDocuments();
+              
+              console.log('👥 Users count:', userCount);
+              console.log('📝 Blogs count:', blogCount);
+              
+              await mongoose.connection.close();
+              process.exit(0);
+            } catch (error) {
+              console.error('❌ MongoDB connection failed:', error.message);
+              process.exit(1);
+            }
+          }
+          
+          testConnection();
+          EOF
+          
+          # Run the test with timeout
+          timeout 60 node test-mongo.js
+          
+          # Cleanup test file
+          rm -f test-mongo.js
           
       - name: Verify MongoDB connection and data
+        env:
+          MONGO_URL: mongodb://${{ secrets.MONGO_USERNAME || 'admin' }}:${{ secrets.MONGO_PASSWORD || 'password123' }}@localhost:27017/${{ secrets.MONGO_DATABASE || 'blogdb' }}?authSource=admin
         run: |
-          echo "Checking MongoDB connection..."
-          mongosh --host localhost --port 27017 --username "${{ secrets.MONGO_USERNAME || 'admin' }}" --password "${{ secrets.MONGO_PASSWORD || 'password123' }}" --authenticationDatabase admin --eval "
-            console.log('MongoDB connected successfully');
-            console.log('Users count:', db.getSiblingDB('${{ secrets.MONGO_DATABASE || 'blogdb' }}').users.countDocuments());
-            console.log('Blogs count:', db.getSiblingDB('${{ secrets.MONGO_DATABASE || 'blogdb' }}').blogs.countDocuments());
-          "
+          echo "🔍 Verifying MongoDB connection and data..."
+          node test-mongo.js
           
       - name: Run database tests
         env:

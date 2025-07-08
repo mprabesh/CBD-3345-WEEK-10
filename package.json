@@ -1,0 +1,53 @@
+{
+  "name": "blogapp-backend",
+  "version": "1.0.0",
+  "description": "Blog application backend with CI/CD and service containers",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:integration": "jest --testPathPattern=integration",
+    "populate": "node populate-db.js"
+  },
+  "dependencies": {
+    "express": "^4.18.0",
+    "mongoose": "^7.0.0",
+    "bcrypt": "^5.1.0",
+    "jsonwebtoken": "^9.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.0.0",
+    "mongoose-unique-validator": "^3.1.0"
+  },
+  "devDependencies": {
+    "jest": "^29.0.0",
+    "supertest": "^6.3.0",
+    "nodemon": "^3.0.0",
+    "@types/jest": "^29.0.0"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testTimeout": 30000,
+    "setupFilesAfterEnv": ["<rootDir>/tests/setup.js"],
+    "collectCoverageFrom": [
+      "**/*.js",
+      "!**/node_modules/**",
+      "!**/coverage/**",
+      "!jest.config.js"
+    ]
+  },
+  "keywords": [
+    "nodejs",
+    "express",
+    "mongodb",
+    "blog",
+    "api",
+    "docker",
+    "github-actions",
+    "service-container"
+  ],
+  "author": "Your Name",
+  "license": "MIT"
+}

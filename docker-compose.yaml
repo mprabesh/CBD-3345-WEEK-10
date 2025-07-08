@@ -1,0 +1,43 @@
+
+services:
+  # Node.js API Application
+  api:
+    image: magarp0723/blogapp-backend:v1
+    container_name: nodejs-api
+    ports:
+      - "${PROD_PORT:-8081}:${PROD_PORT:-8081}"  # Use PROD_PORT env var (default: 8081)
+    environment:
+      - NODE_ENV=production
+      - PROD_PORT=${PROD_PORT}           # Server port (default: 8081)
+      - MONGO_URL=${MONGO_URL}           # MongoDB Atlas connection string
+      - SECRET_KEY=${SECRET_KEY}         # JWT signing secret
+    depends_on:
+      - mongo
+    restart: always                      # Auto-restart on failure
+    networks:
+      - app-network
+
+  # MongoDB Database
+  mongo:
+    image: mongo:latest
+    container_name: mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=password123
+      - MONGO_INITDB_DATABASE=blogdb
+    volumes:
+      - mongodb_data:/data/db
+      - ./mongo-init:/docker-entrypoint-initdb.d:ro  # Mount initialization scripts
+    restart: unless-stopped
+    networks:
+      - app-network
+
+volumes:
+  mongodb_data:
+    driver: local
+
+networks:
+  app-network:
+    driver: bridge

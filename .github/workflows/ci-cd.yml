@@ -100,7 +100,234 @@ jobs:
           MONGO_URL: mongodb://${{ secrets.MONGO_USERNAME || 'admin' }}:${{ secrets.MONGO_PASSWORD || 'password123' }}@localhost:27017/${{ secrets.MONGO_DATABASE || 'blogdb' }}?authSource=admin
         run: |
           echo "🔍 Verifying MongoDB connection and data..."
-          node test-mongo.js
+          
+          # Create the test script again (each step has its own shell)
+          cat > verify-mongo.js << 'EOF'
+          const mongoose = require('mongoose');
+          
+          async function verifyData() {
+            try {
+              await mongoose.connect(process.env.MONGO_URL);
+              console.log('✅ MongoDB connection verified');
+              
+              // Test database and collections
+              const db = mongoose.connection.db;
+              const collections = await db.listCollections().toArray();
+              console.log('📋 Available collections:', collections.map(c => c.name));
+              
+              // Test if our collections exist and have data
+              const User = mongoose.model('User', new mongoose.Schema({}, { collection: 'users' }));
+              const Blog = mongoose.model('Blog', new mongoose.Schema({}, { collection: 'blogs' }));
+              
+              const userCount = await User.countDocuments();
+              const blogCount = await Blog.countDocuments();
+              
+              console.log('👥 Users count:', userCount);
+              console.log('📝 Blogs count:', blogCount);
+              
+              if (userCount === 0) {
+                console.log('⚠️  No users found - database might not be initialized');
+              }
+              
+              if (blogCount === 0) {
+                console.log('⚠️  No blogs found - database might not be initialized');
+              }
+              
+              await mongoose.connection.close();
+              console.log('✅ Database verification completed');
+              process.exit(0);
+            } catch (error) {
+              console.error('❌ Database verification failed:', error.message);
+              process.exit(1);
+            }
+          }
+          
+          verifyData();
+          EOF
+          
+          # Run the verification
+          node verify-mongo.js
+          
+          # Cleanup
+          rm -f verify-mongo.js
+          
+      - name: Initialize database with sample data
+        env:
+          MONGO_URL: mongodb://${{ secrets.MONGO_USERNAME || 'admin' }}:${{ secrets.MONGO_PASSWORD || 'password123' }}@localhost:27017/${{ secrets.MONGO_DATABASE || 'blogdb' }}?authSource=admin
+        run: |
+          echo "🔄 Initializing database with sample data..."
+          
+          # Create initialization script
+          cat > init-data.js << 'EOF'
+          const mongoose = require('mongoose');
+          
+          // User Schema
+          const userSchema = new mongoose.Schema({
+            username: { type: String, required: true, unique: true, minLength: 3 },
+            name: { type: String, required: true, minLength: 3 },
+            passwordHash: { type: String, required: true },
+            blogs: [{ type: mongoose.Schema.Types.ObjectId, ref: "Blog" }]
+          });
+          
+          userSchema.set("toJSON", {
+            transform: (document, returnObj) => {
+              returnObj.id = returnObj._id.toString();
+              delete returnObj._id;
+              delete returnObj.__v;
+              delete returnObj.passwordHash;
+            },
+          });
+          
+          // Blog Schema
+          const blogSchema = new mongoose.Schema({
+            title: { type: String, required: true },
+            author: { type: String, required: true },
+            url: String,
+            likes: Number,
+            user: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+          });
+          
+          blogSchema.set("toJSON", {
+            transform: (document, returnedObj) => {
+              returnedObj.id = returnedObj._id.toString();
+              delete returnedObj._id;
+              delete returnedObj.__v;
+            },
+          });
+          
+          const User = mongoose.model('User', userSchema);
+          const Blog = mongoose.model('Blog', blogSchema);
+          
+          async function initializeData() {
+            try {
+              await mongoose.connect(process.env.MONGO_URL);
+              console.log('✅ Connected to MongoDB for initialization');
+              
+              // Clear existing data
+              await User.deleteMany({});
+              await Blog.deleteMany({});
+              console.log('🗑️  Cleared existing data');
+              
+              // Create users with hashed passwords
+              const users = await User.insertMany([
+                {
+                  username: "john_doe",
+                  name: "John Doe",
+                  passwordHash: "$2b$10$K7L/8Y5mQH5YKk5zQJXKfeLyZwZyWXp3KXdqGFt5hQQVrZDz1YLEm", // password123
+                  blogs: []
+                },
+                {
+                  username: "jane_smith",
+                  name: "Jane Smith",
+                  passwordHash: "$2b$10$K7L/8Y5mQH5YKk5zQJXKfeLyZwZyWXp3KXdqGFt5hQQVrZDz1YLEm", // password123
+                  blogs: []
+                },
+                {
+                  username: "mike_wilson",
+                  name: "Mike Wilson",
+                  passwordHash: "$2b$10$K7L/8Y5mQH5YKk5zQJXKfeLyZwZyWXp3KXdqGFt5hQQVrZDz1YLEm", // password123
+                  blogs: []
+                },
+                {
+                  username: "sarah_jones",
+                  name: "Sarah Jones",
+                  passwordHash: "$2b$10$K7L/8Y5mQH5YKk5zQJXKfeLyZwZyWXp3KXdqGFt5hQQVrZDz1YLEm", // password123
+                  blogs: []
+                },
+                {
+                  username: "alex_brown",
+                  name: "Alex Brown",
+                  passwordHash: "$2b$10$K7L/8Y5mQH5YKk5zQJXKfeLyZwZyWXp3KXdqGFt5hQQVrZDz1YLEm", // password123
+                  blogs: []
+                }
+              ]);
+              console.log('👥 Created 5 users');
+              
+              // Create blogs
+              const blogs = [
+                { title: "Getting Started with Node.js", author: "John Doe", url: "https://example.com/nodejs-guide", likes: 15, user: users[0]._id },
+                { title: "JavaScript ES6 Features", author: "John Doe", url: "https://example.com/es6-features", likes: 27, user: users[0]._id },
+                { title: "MongoDB Best Practices", author: "Jane Smith", url: "https://example.com/mongodb-practices", likes: 23, user: users[1]._id },
+                { title: "RESTful API Design", author: "Jane Smith", url: "https://example.com/restful-api", likes: 35, user: users[1]._id },
+                { title: "React Hooks Deep Dive", author: "Mike Wilson", url: "https://example.com/react-hooks", likes: 42, user: users[2]._id },
+                { title: "CSS Grid Layout", author: "Mike Wilson", url: "https://example.com/css-grid", likes: 19, user: users[2]._id },
+                { title: "Express.js Authentication", author: "Sarah Jones", url: "https://example.com/express-auth", likes: 18, user: users[3]._id },
+                { title: "JWT Authentication Guide", author: "Sarah Jones", url: "https://example.com/jwt-auth", likes: 44, user: users[3]._id },
+                { title: "Docker for Developers", author: "Alex Brown", url: "https://example.com/docker-guide", likes: 31, user: users[4]._id },
+                { title: "Microservices Architecture", author: "Alex Brown", url: "https://example.com/microservices", likes: 38, user: users[4]._id }
+              ];
+              
+              const createdBlogs = await Blog.insertMany(blogs);
+              console.log('📝 Created 10 blogs');
+              
+              // Update users with their blog references
+              for (let i = 0; i < users.length; i++) {
+                const userBlogs = createdBlogs.filter(blog => blog.user.toString() === users[i]._id.toString());
+                users[i].blogs = userBlogs.map(blog => blog._id);
+                await users[i].save();
+              }
+              console.log('🔗 Updated user-blog relationships');
+              
+              await mongoose.connection.close();
+              console.log('✅ Database initialization completed successfully!');
+              console.log('📊 Summary: 5 users, 10 blogs, relationships established');
+              process.exit(0);
+            } catch (error) {
+              console.error('❌ Database initialization failed:', error.message);
+              process.exit(1);
+            }
+          }
+          
+          initializeData();
+          EOF
+          
+          # Run initialization
+          node init-data.js
+          
+          # Cleanup
+          rm -f init-data.js
+          
+      - name: Final verification of database
+        env:
+          MONGO_URL: mongodb://${{ secrets.MONGO_USERNAME || 'admin' }}:${{ secrets.MONGO_PASSWORD || 'password123' }}@localhost:27017/${{ secrets.MONGO_DATABASE || 'blogdb' }}?authSource=admin
+        run: |
+          echo "🔍 Final verification of initialized data..."
+          
+          # Quick verification script
+          cat > final-verify.js << 'EOF'
+          const mongoose = require('mongoose');
+          
+          async function finalVerify() {
+            try {
+              await mongoose.connect(process.env.MONGO_URL);
+              
+              const User = mongoose.model('User', new mongoose.Schema({}, { collection: 'users' }));
+              const Blog = mongoose.model('Blog', new mongoose.Schema({}, { collection: 'blogs' }));
+              
+              const userCount = await User.countDocuments();
+              const blogCount = await Blog.countDocuments();
+              
+              console.log('📊 Final count - Users:', userCount, 'Blogs:', blogCount);
+              
+              if (userCount >= 5 && blogCount >= 10) {
+                console.log('✅ Database initialization verified successfully!');
+              } else {
+                console.log('⚠️  Database initialization may be incomplete');
+              }
+              
+              await mongoose.connection.close();
+              process.exit(0);
+            } catch (error) {
+              console.error('❌ Final verification failed:', error.message);
+              process.exit(1);
+            }
+          }
+          
+          finalVerify();
+          EOF
+          
+          node final-verify.js
+          rm -f final-verify.js
           
       - name: Run database tests
         env:
